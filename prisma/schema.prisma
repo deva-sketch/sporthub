@@ -1,0 +1,225 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RoleName {
+  ADMIN
+  ORGANIZER
+  TEAM_MANAGER
+  PLAYER
+}
+
+enum TournamentFormat {
+  LEAGUE
+  KNOCKOUT
+  ROUND_ROBIN
+  GROUP_KNOCKOUT
+}
+
+enum TournamentStatus {
+  DRAFT
+  REGISTRATION_OPEN
+  REGISTRATION_CLOSED
+  ONGOING
+  COMPLETED
+  CANCELLED
+}
+
+enum MatchStatus {
+  SCHEDULED
+  LIVE
+  COMPLETED
+  POSTPONED
+  CANCELLED
+}
+
+enum RegistrationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+model User {
+  id                   String       @id @default(uuid())
+  name                 String
+  email                String       @unique
+  passwordHash         String
+  role                 Role         @relation(fields: [roleId], references: [id])
+  roleId               String
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+  player               Player?
+  // opposite side of Tournament.organizer
+  organizedTournaments Tournament[]
+  managedTeams         Team[]       @relation("ManagedTeams")
+}
+
+model Role {
+  id    String   @id @default(uuid())
+  name  RoleName @unique
+  users User[]
+}
+
+model Sport {
+  id          String       @id @default(uuid())
+  name        String       @unique
+  description String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  tournaments Tournament[]
+  teams       Team[]
+}
+
+model Tournament {
+  id                   String                       @id @default(uuid())
+  name                 String
+  description          String?
+  sport                Sport                        @relation(fields: [sportId], references: [id])
+  sportId              String
+  organizer            User                         @relation(fields: [organizerId], references: [id])
+  organizerId          String
+  startDate            DateTime
+  endDate              DateTime
+  registrationDeadline DateTime
+  format               TournamentFormat
+  status               TournamentStatus             @default(DRAFT)
+  maxTeams             Int?
+  location             String?
+  createdAt            DateTime                     @default(now())
+  updatedAt            DateTime                     @updatedAt
+  matches              Match[]
+  playerStatistics     PlayerStatistic[]
+  registrations        TournamentTeamRegistration[]
+}
+
+model Team {
+  id            String                       @id @default(uuid())
+  name          String
+  shortName     String?
+  sport         Sport                        @relation(fields: [sportId], references: [id])
+  sportId       String
+  managerId     String?
+  manager       User?                        @relation("ManagedTeams", fields: [managerId], references: [id])
+  createdAt     DateTime                     @default(now())
+  updatedAt     DateTime                     @updatedAt
+  memberships   TeamMembership[]
+  homeMatches   Match[]                      @relation("HomeTeam")
+  awayMatches   Match[]                      @relation("AwayTeam")
+  registrations TournamentTeamRegistration[]
+
+  @@index([managerId])
+}
+
+model Player {
+  id           String            @id @default(uuid())
+  user         User              @relation(fields: [userId], references: [id])
+  userId       String            @unique
+  dateOfBirth  DateTime?
+  jerseyNumber Int?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  memberships  TeamMembership[]
+  statistics   PlayerStatistic[]
+  // opposite side of MatchEvent.player
+  matchEvents  MatchEvent[]
+}
+
+model TeamMembership {
+  id       String    @id @default(uuid())
+  team     Team      @relation(fields: [teamId], references: [id])
+  teamId   String
+  player   Player    @relation(fields: [playerId], references: [id])
+  playerId String
+  joinedAt DateTime  @default(now())
+  leftAt   DateTime?
+
+  @@unique([teamId, playerId])
+}
+
+model Venue {
+  id        String   @id @default(uuid())
+  name      String
+  location  String?
+  capacity  Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  matches   Match[]
+}
+
+model Match {
+  id           String       @id @default(uuid())
+  tournament   Tournament   @relation(fields: [tournamentId], references: [id])
+  tournamentId String
+  venue        Venue        @relation(fields: [venueId], references: [id])
+  venueId      String
+  homeTeam     Team         @relation("HomeTeam", fields: [homeTeamId], references: [id])
+  homeTeamId   String
+  awayTeam     Team         @relation("AwayTeam", fields: [awayTeamId], references: [id])
+  awayTeamId   String
+  scheduledAt  DateTime
+  status       MatchStatus  @default(SCHEDULED)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  events       MatchEvent[]
+  scores       Score[]
+}
+
+model MatchEvent {
+  id        String   @id @default(uuid())
+  match     Match    @relation(fields: [matchId], references: [id])
+  matchId   String
+  player    Player?  @relation(fields: [playerId], references: [id])
+  playerId  String?
+  eventType String
+  eventData Json?
+  createdAt DateTime @default(now())
+}
+
+model Score {
+  id        String   @id @default(uuid())
+  match     Match    @relation(fields: [matchId], references: [id])
+  matchId   String
+  homeScore Int
+  awayScore Int
+  period    String?
+  updatedAt DateTime @updatedAt
+}
+
+model PlayerStatistic {
+  id            String     @id @default(uuid())
+  player        Player     @relation(fields: [playerId], references: [id])
+  playerId      String
+  tournament    Tournament @relation(fields: [tournamentId], references: [id])
+  tournamentId  String
+  matchesPlayed Int        @default(0)
+  points        Int        @default(0)
+  goals         Int        @default(0)
+  assists       Int        @default(0)
+  wins          Int        @default(0)
+  losses        Int        @default(0)
+  extraData     Json?
+
+  @@unique([playerId, tournamentId])
+}
+
+model TournamentTeamRegistration {
+  id           String             @id @default(uuid())
+  tournament   Tournament         @relation(fields: [tournamentId], references: [id])
+  tournamentId String
+  team         Team               @relation(fields: [teamId], references: [id])
+  teamId       String
+  status       RegistrationStatus @default(PENDING)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  @@unique([tournamentId, teamId])
+  @@index([tournamentId])
+  @@index([teamId])
+  @@index([status])
+}
